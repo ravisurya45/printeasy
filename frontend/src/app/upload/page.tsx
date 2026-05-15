@@ -1,0 +1,295 @@
+"use client";
+
+import { useState, useRef } from 'react';
+import Link from 'next/link';
+import { useRouter } from 'next/navigation';
+import { PDFDocument } from 'pdf-lib';
+import Script from 'next/script';
+
+export default function UploadPage() {
+  const router = useRouter();
+  const fileInputRef = useRef<HTMLInputElement>(null);
+  
+  const [selectedFile, setSelectedFile] = useState<File | null>(null);
+  const [pageCount, setPageCount] = useState<number>(0);
+  const [isCalculating, setIsCalculating] = useState<boolean>(false);
+  
+  // Print Settings State
+  const [printType, setPrintType] = useState('bw');
+  const [paperSize, setPaperSize] = useState('A4');
+  const [copies, setCopies] = useState(1);
+  const [binding, setBinding] = useState('none');
+  
+  // Payment State
+  const [isProcessing, setIsProcessing] = useState(false);
+  
+  // Pricing Mock State
+  const prices = {
+    bw: 2,
+    color: 10,
+    binding: {
+      none: 0,
+      soft: 20,
+      spiral: 40,
+      hard: 150
+    }
+  };
+
+  const handleFileChange = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    if (e.target.files && e.target.files.length > 0) {
+      const file = e.target.files[0];
+      setSelectedFile(file);
+      setIsCalculating(true);
+      
+      try {
+        if (file.type === 'application/pdf') {
+          const arrayBuffer = await file.arrayBuffer();
+          const pdfDoc = await PDFDocument.load(arrayBuffer);
+          setPageCount(pdfDoc.getPageCount());
+        } else if (file.type.startsWith('image/')) {
+          setPageCount(1);
+        } else {
+          setPageCount(1); 
+        }
+      } catch (err) {
+        console.error("Error reading file", err);
+        setPageCount(1);
+      } finally {
+        setIsCalculating(false);
+      }
+    }
+  };
+
+  const handleBrowseClick = () => {
+    fileInputRef.current?.click();
+  };
+
+  const calculateTotal = () => {
+    const pageCost = printType === 'bw' ? prices.bw : prices.color;
+    const bindingCost = prices.binding[binding as keyof typeof prices.binding];
+    return (pageCost * (pageCount || 1) * copies) + bindingCost;
+  };
+
+  const handlePayment = async () => {
+    setIsProcessing(true);
+    const amount = calculateTotal();
+
+    try {
+      // 1. Create order on backend
+      const apiUrl = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:5001';
+      const res = await fetch(`${apiUrl}/api/create-order`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ amount }),
+      });
+
+      const data = await res.json();
+      
+      if (!data.success) {
+        alert(`Failed to create order: ${data.error || 'Unknown error'}`);
+        setIsProcessing(false);
+        return;
+      }
+
+      // 2. Open Razorpay Checkout Modal
+      const options = {
+        key: process.env.NEXT_PUBLIC_RAZORPAY_KEY_ID || 'rzp_test_mock_key_id', // Fallback for testing
+        amount: data.order.amount,
+        currency: "INR",
+        name: "PrintEasy",
+        description: `Printing ${pageCount} pages (${copies} copy)`,
+        image: "https://example.com/your_logo",
+        order_id: data.order.id, // This is the order ID created in the backend
+        handler: async function (response: any) {
+          // 3. Verify Payment on Backend
+          try {
+            const verifyRes = await fetch(`${apiUrl}/api/verify-payment`, {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify({
+                razorpay_order_id: response.razorpay_order_id,
+                razorpay_payment_id: response.razorpay_payment_id,
+                razorpay_signature: response.razorpay_signature
+              }),
+            });
+            const verifyData = await verifyRes.json();
+            
+            if (verifyData.success) {
+              // Payment verified successfully!
+              router.push(`/orders?method=Razorpay&total=${amount}`);
+            } else {
+              alert("Payment verification failed!");
+            }
+          } catch (err) {
+            console.error(err);
+            alert("Error verifying payment");
+          }
+        },
+        prefill: {
+          name: "Customer Name",
+          email: "customer@example.com",
+          contact: "9999999999"
+        },
+        theme: {
+          color: "#2563EB"
+        }
+      };
+
+      // @ts-ignore
+      const rzp = new window.Razorpay(options);
+      
+      rzp.on('payment.failed', function (response: any){
+        alert("Payment Failed: " + response.error.description);
+      });
+
+      rzp.open();
+    } catch (error) {
+      console.error(error);
+      alert("Error initiating payment");
+    } finally {
+      setIsProcessing(false);
+    }
+  };
+
+  return (
+    <div className="min-h-screen bg-slate-50 flex flex-col font-sans text-slate-900">
+      {/* Load Razorpay SDK */}
+      <Script src="https://checkout.razorpay.com/v1/checkout.js" />
+      
+      <header className="w-full py-6 px-8 bg-white shadow-sm flex items-center justify-between">
+        <Link href="/" className="text-2xl font-extrabold text-blue-600 tracking-tight">PrintEasy</Link>
+        <nav className="flex gap-6">
+          <Link href="/pricing" className="text-slate-600 hover:text-blue-600 font-medium">Pricing</Link>
+          <Link href="/admin" className="text-slate-600 hover:text-blue-600 font-medium">Admin</Link>
+        </nav>
+      </header>
+
+      <main className="flex-1 max-w-5xl w-full mx-auto p-8 mt-8 grid grid-cols-1 lg:grid-cols-2 gap-12 relative">
+        {/* Upload Section */}
+        <div>
+          <h1 className="text-3xl font-bold mb-6">Upload Document</h1>
+          
+          <div 
+            className="border-4 border-dashed border-slate-300 rounded-3xl p-12 flex flex-col items-center justify-center bg-white hover:bg-slate-50 hover:border-blue-400 transition-colors cursor-pointer group"
+            onClick={handleBrowseClick}
+          >
+            <input 
+              type="file" 
+              ref={fileInputRef} 
+              className="hidden" 
+              onChange={handleFileChange} 
+              accept=".pdf,.doc,.docx,.ppt,.pptx,.jpg,.png"
+            />
+            <div className="w-16 h-16 mb-4 bg-blue-100 text-blue-600 rounded-full flex items-center justify-center group-hover:scale-110 transition-transform">
+              <svg xmlns="http://www.w3.org/2000/svg" className="h-8 w-8" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+                <path strokeLinecap="round" strokeLinejoin="round" d="M7 16a4 4 0 01-.88-7.903A5 5 0 1115.9 6L16 6a5 5 0 011 9.9M15 13l-3-3m0 0l-3 3m3-3v12" />
+              </svg>
+            </div>
+            <h3 className="text-xl font-semibold mb-2 text-center">Click to Browse Files</h3>
+            <p className="text-slate-500 text-sm">PDF, DOCX, PPTX, JPG</p>
+          </div>
+
+          {selectedFile && (
+            <div className="mt-8 p-6 bg-blue-50 border border-blue-100 rounded-2xl flex items-center justify-between">
+              <div>
+                <p className="font-semibold text-blue-900">{selectedFile.name}</p>
+                <p className="text-sm text-blue-600">
+                  {(selectedFile.size / 1024 / 1024).toFixed(2)} MB • 
+                  {isCalculating ? ' Calculating pages...' : ` ${pageCount} Pages`}
+                </p>
+              </div>
+              <button 
+                onClick={() => {
+                  setSelectedFile(null);
+                  setPageCount(0);
+                }}
+                className="text-red-500 hover:text-red-700 text-sm font-medium"
+              >
+                Remove
+              </button>
+            </div>
+          )}
+        </div>
+
+        {/* Print Settings Section */}
+        <div className={`transition-opacity duration-500 ${selectedFile ? 'opacity-100' : 'opacity-50 pointer-events-none'}`}>
+          <h2 className="text-3xl font-bold mb-6">Print Settings</h2>
+          
+          <div className="bg-white p-6 rounded-3xl shadow-sm border border-slate-200 space-y-6">
+            <div>
+              <label className="block text-sm font-bold text-slate-700 mb-2">Print Type</label>
+              <div className="flex gap-4">
+                <button 
+                  className={`flex-1 py-3 rounded-xl border-2 font-semibold ${printType === 'bw' ? 'border-blue-600 bg-blue-50 text-blue-700' : 'border-slate-200 text-slate-600 hover:border-slate-300'}`}
+                  onClick={() => setPrintType('bw')}
+                >
+                  Black & White (₹2/pg)
+                </button>
+                <button 
+                  className={`flex-1 py-3 rounded-xl border-2 font-semibold ${printType === 'color' ? 'border-blue-600 bg-blue-50 text-blue-700' : 'border-slate-200 text-slate-600 hover:border-slate-300'}`}
+                  onClick={() => setPrintType('color')}
+                >
+                  Color (₹10/pg)
+                </button>
+              </div>
+            </div>
+
+            <div className="grid grid-cols-2 gap-4">
+              <div>
+                <label className="block text-sm font-bold text-slate-700 mb-2">Paper Size</label>
+                <select 
+                  className="w-full p-3 border-2 border-slate-200 rounded-xl outline-none focus:border-blue-500"
+                  value={paperSize}
+                  onChange={(e) => setPaperSize(e.target.value)}
+                >
+                  <option value="A4">A4 (Standard)</option>
+                  <option value="A3">A3 (Large)</option>
+                  <option value="Letter">Letter</option>
+                </select>
+              </div>
+              <div>
+                <label className="block text-sm font-bold text-slate-700 mb-2">Copies</label>
+                <input 
+                  type="number" 
+                  min="1" 
+                  value={copies} 
+                  onChange={(e) => setCopies(parseInt(e.target.value) || 1)}
+                  className="w-full p-3 border-2 border-slate-200 rounded-xl outline-none focus:border-blue-500"
+                />
+              </div>
+            </div>
+
+            <div>
+              <label className="block text-sm font-bold text-slate-700 mb-2">Binding</label>
+              <select 
+                className="w-full p-3 border-2 border-slate-200 rounded-xl outline-none focus:border-blue-500"
+                value={binding}
+                onChange={(e) => setBinding(e.target.value)}
+              >
+                <option value="none">No Binding</option>
+                <option value="soft">Soft Binding (+₹20)</option>
+                <option value="spiral">Spiral Binding (+₹40)</option>
+                <option value="hard">Hard Binding (+₹150)</option>
+              </select>
+            </div>
+
+            <div className="pt-6 border-t border-slate-100 flex items-center justify-between">
+              <div>
+                <p className="text-sm text-slate-500">Estimated Total</p>
+                <p className="text-3xl font-extrabold text-slate-900">₹{calculateTotal()}</p>
+              </div>
+              <button 
+                onClick={handlePayment}
+                disabled={isCalculating || pageCount === 0 || isProcessing}
+                className="px-8 py-4 bg-green-500 text-white font-bold rounded-xl shadow-lg hover:bg-green-600 transition-all transform hover:-translate-y-1 disabled:opacity-50 disabled:hover:translate-y-0"
+              >
+                {isProcessing ? 'Processing...' : 'Pay with Razorpay'}
+              </button>
+            </div>
+            <p className="text-xs text-center text-slate-400 font-medium">Includes automated UPI, Card, and Net Banking options</p>
+          </div>
+        </div>
+      </main>
+    </div>
+  );
+}
