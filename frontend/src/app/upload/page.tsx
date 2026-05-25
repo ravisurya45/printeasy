@@ -5,6 +5,7 @@ import Link from 'next/link';
 import { useRouter } from 'next/navigation';
 import { PDFDocument } from 'pdf-lib';
 import Script from 'next/script';
+import { QRCodeSVG } from 'qrcode.react';
 
 export default function UploadPage() {
   const router = useRouter();
@@ -22,6 +23,8 @@ export default function UploadPage() {
   
   // Payment State
   const [isProcessing, setIsProcessing] = useState(false);
+  const [paymentMethod, setPaymentMethod] = useState<'razorpay' | 'direct_upi'>('razorpay');
+  const [showDirectUPI, setShowDirectUPI] = useState(false);
   
   // Pricing Mock State
   const prices = {
@@ -71,6 +74,11 @@ export default function UploadPage() {
   };
 
   const handlePayment = async () => {
+    if (paymentMethod === 'direct_upi') {
+      setShowDirectUPI(true);
+      return;
+    }
+
     setIsProcessing(true);
     const amount = calculateTotal();
 
@@ -273,6 +281,24 @@ export default function UploadPage() {
               </select>
             </div>
 
+            <div>
+              <label className="block text-sm font-bold text-slate-700 mb-2">Payment Method</label>
+              <div className="flex gap-4">
+                <button 
+                  className={`flex-1 py-3 rounded-xl border-2 font-semibold transition-colors ${paymentMethod === 'razorpay' ? 'border-blue-600 bg-blue-50 text-blue-700' : 'border-slate-200 text-slate-600 hover:border-slate-300'}`}
+                  onClick={() => setPaymentMethod('razorpay')}
+                >
+                  Razorpay
+                </button>
+                <button 
+                  className={`flex-1 py-3 rounded-xl border-2 font-semibold transition-colors ${paymentMethod === 'direct_upi' ? 'border-blue-600 bg-blue-50 text-blue-700' : 'border-slate-200 text-slate-600 hover:border-slate-300'}`}
+                  onClick={() => setPaymentMethod('direct_upi')}
+                >
+                  Direct UPI QR
+                </button>
+              </div>
+            </div>
+
             <div className="pt-6 border-t border-slate-100 flex items-center justify-between">
               <div>
                 <p className="text-sm text-slate-500">Estimated Total</p>
@@ -283,13 +309,64 @@ export default function UploadPage() {
                 disabled={isCalculating || pageCount === 0 || isProcessing}
                 className="px-8 py-4 bg-green-500 text-white font-bold rounded-xl shadow-lg hover:bg-green-600 transition-all transform hover:-translate-y-1 disabled:opacity-50 disabled:hover:translate-y-0"
               >
-                {isProcessing ? 'Processing...' : 'Pay with Razorpay'}
+                {isProcessing ? 'Processing...' : (paymentMethod === 'direct_upi' ? 'Show QR Code' : 'Pay with Razorpay')}
               </button>
             </div>
             <p className="text-xs text-center text-slate-400 font-medium">Includes automated UPI, Card, and Net Banking options</p>
           </div>
         </div>
       </main>
+
+      {/* Direct UPI Modal */}
+      {showDirectUPI && (
+        <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
+          <div className="bg-white p-8 rounded-3xl max-w-sm w-full text-center shadow-2xl transform transition-all">
+            <h3 className="text-2xl font-bold mb-2">Scan to Pay</h3>
+            <p className="text-slate-500 mb-6 font-medium">₹{calculateTotal()} via any UPI app</p>
+            
+            <div className="bg-slate-50 p-6 rounded-2xl inline-block mb-2 border-2 border-slate-100">
+              <QRCodeSVG 
+                value={`upi://pay?pa=${process.env.NEXT_PUBLIC_UPI_ID || 'example@upi'}&pn=PrintEasy&am=${calculateTotal()}&cu=INR`}
+                size={220}
+                level="H"
+                includeMargin={true}
+              />
+            </div>
+            
+            <p className="text-sm text-slate-500 mb-8 mt-2">Scan with GPay, PhonePe, or Paytm</p>
+            
+            <div className="flex gap-4">
+              <button 
+                onClick={() => setShowDirectUPI(false)}
+                className="flex-1 py-3 bg-slate-100 hover:bg-slate-200 text-slate-700 rounded-xl font-bold transition-colors"
+              >
+                Cancel
+              </button>
+              <button 
+                onClick={async () => {
+                  try {
+                    // Create an unverified order in backend
+                    const apiUrl = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:5001';
+                    await fetch(`${apiUrl}/api/create-order`, {
+                      method: 'POST',
+                      headers: { 'Content-Type': 'application/json' },
+                      body: JSON.stringify({ amount: calculateTotal() }),
+                    });
+                  } catch (e) {
+                    console.error("Could not save order", e);
+                  }
+                  
+                  // Optimistically assume they paid and route to orders
+                  router.push(`/orders?method=DirectUPI&total=${calculateTotal()}`);
+                }}
+                className="flex-1 py-3 bg-green-500 text-white hover:bg-green-600 rounded-xl font-bold transition-colors shadow-md shadow-green-200"
+              >
+                I've Paid
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }
