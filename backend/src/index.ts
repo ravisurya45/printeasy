@@ -5,6 +5,7 @@ import Razorpay from 'razorpay';
 import crypto from 'crypto';
 import mongoose from 'mongoose';
 import Order from './models/Order.js';
+import Settings from './models/Settings.js';
 
 dotenv.config();
 
@@ -121,6 +122,36 @@ app.post('/api/verify-payment', async (req, res) => {
   } else {
     // Invalid signature
     res.status(400).json({ success: false, message: 'Invalid payment signature' });
+  }
+});
+
+// Get Settings
+app.get('/api/settings', async (req, res) => {
+  try {
+    let settings = await Settings.findOne();
+    if (!settings) {
+      settings = await Settings.create({});
+    }
+    res.status(200).json({ success: true, settings });
+  } catch (error) {
+    res.status(500).json({ success: false, error: 'Failed to fetch settings' });
+  }
+});
+
+// Update Settings
+app.post('/api/settings', async (req, res) => {
+  try {
+    const { prices } = req.body;
+    let settings = await Settings.findOne();
+    if (!settings) {
+      settings = new Settings({ prices });
+    } else {
+      settings.prices = prices;
+    }
+    await settings.save();
+    res.status(200).json({ success: true, settings });
+  } catch (error) {
+    res.status(500).json({ success: false, error: 'Failed to save settings' });
   }
 });
 

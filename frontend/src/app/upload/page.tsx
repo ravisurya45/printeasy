@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useRef } from 'react';
+import { useState, useRef, useEffect } from 'react';
 import Link from 'next/link';
 import { useRouter } from 'next/navigation';
 import { PDFDocument } from 'pdf-lib';
@@ -17,6 +17,7 @@ export default function UploadPage() {
   
   // Print Settings State
   const [printType, setPrintType] = useState('bw');
+  const [sides, setSides] = useState('single');
   const [paperSize, setPaperSize] = useState('A4');
   const [copies, setCopies] = useState(1);
   const [binding, setBinding] = useState('none');
@@ -26,17 +27,47 @@ export default function UploadPage() {
   const [paymentMethod, setPaymentMethod] = useState<'razorpay' | 'direct_upi'>('razorpay');
   const [showDirectUPI, setShowDirectUPI] = useState(false);
   
-  // Pricing Mock State
-  const prices = {
+  // Pricing State
+  const [prices, setPrices] = useState({
     bw: 2,
     color: 10,
+    singleSide: 0,
+    doubleSide: 0,
     binding: {
       none: 0,
       soft: 20,
       spiral: 40,
       hard: 150
     }
-  };
+  });
+
+  useEffect(() => {
+    const fetchPrices = async () => {
+      try {
+        const apiUrl = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:5001';
+        const res = await fetch(`${apiUrl}/api/settings`);
+        const data = await res.json();
+        if (data.success && data.settings?.prices) {
+          const fetchedPrices = data.settings.prices;
+          setPrices({
+            bw: fetchedPrices.bw,
+            color: fetchedPrices.color,
+            singleSide: fetchedPrices.singleSide || 0,
+            doubleSide: fetchedPrices.doubleSide || 0,
+            binding: {
+              none: 0,
+              soft: fetchedPrices.soft || 20,
+              spiral: fetchedPrices.spiral || 40,
+              hard: fetchedPrices.hard || 150
+            }
+          });
+        }
+      } catch (err) {
+        console.error("Failed to fetch prices", err);
+      }
+    };
+    fetchPrices();
+  }, []);
 
   const handleFileChange = async (e: React.ChangeEvent<HTMLInputElement>) => {
     if (e.target.files && e.target.files.length > 0) {
@@ -69,8 +100,9 @@ export default function UploadPage() {
 
   const calculateTotal = () => {
     const pageCost = printType === 'bw' ? prices.bw : prices.color;
+    const sideCost = sides === 'single' ? prices.singleSide : prices.doubleSide;
     const bindingCost = prices.binding[binding as keyof typeof prices.binding];
-    return (pageCost * (pageCount || 1) * copies) + bindingCost;
+    return ((pageCost + sideCost) * (pageCount || 1) * copies) + bindingCost;
   };
 
   const handlePayment = async () => {
@@ -238,6 +270,24 @@ export default function UploadPage() {
                   onClick={() => setPrintType('color')}
                 >
                   Color (₹10/pg)
+                </button>
+              </div>
+            </div>
+
+            <div>
+              <label className="block text-sm font-bold text-slate-700 mb-2">Sides</label>
+              <div className="flex gap-4">
+                <button 
+                  className={`flex-1 py-3 rounded-xl border-2 font-semibold ${sides === 'single' ? 'border-blue-600 bg-blue-50 text-blue-700' : 'border-slate-200 text-slate-600 hover:border-slate-300'}`}
+                  onClick={() => setSides('single')}
+                >
+                  Single Side {prices.singleSide > 0 ? `(+₹${prices.singleSide}/pg)` : ''}
+                </button>
+                <button 
+                  className={`flex-1 py-3 rounded-xl border-2 font-semibold ${sides === 'double' ? 'border-blue-600 bg-blue-50 text-blue-700' : 'border-slate-200 text-slate-600 hover:border-slate-300'}`}
+                  onClick={() => setSides('double')}
+                >
+                  Double Side {prices.doubleSide > 0 ? `(+₹${prices.doubleSide}/pg)` : ''}
                 </button>
               </div>
             </div>

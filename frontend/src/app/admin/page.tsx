@@ -12,6 +12,8 @@ export default function AdminPage() {
   const [prices, setPrices] = useState({
     bw: 2,
     color: 10,
+    singleSide: 0,
+    doubleSide: 0,
     soft: 20,
     spiral: 40,
     hard: 150,
@@ -36,15 +38,42 @@ export default function AdminPage() {
     }
   };
 
+  const fetchPrices = async () => {
+    try {
+      const apiUrl = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:5001';
+      const res = await fetch(`${apiUrl}/api/settings`);
+      const data = await res.json();
+      if (data.success && data.settings?.prices) {
+        setPrices(data.settings.prices);
+      }
+    } catch (err) {
+      console.error("Failed to fetch prices", err);
+    }
+  };
+
   useEffect(() => {
     if (activeTab === 'orders') {
       fetchOrders();
+    } else if (activeTab === 'settings') {
+      fetchPrices();
     }
   }, [activeTab]);
 
-  const handleSave = () => {
-    setSaved(true);
-    setTimeout(() => setSaved(false), 3000);
+  const handleSave = async () => {
+    try {
+      const apiUrl = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:5001';
+      const res = await fetch(`${apiUrl}/api/settings`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ prices })
+      });
+      if (res.ok) {
+        setSaved(true);
+        setTimeout(() => setSaved(false), 3000);
+      }
+    } catch (err) {
+      console.error("Failed to save prices", err);
+    }
   };
 
   const updateOrderStatus = async (orderId: string, newStatus: string) => {
@@ -185,7 +214,7 @@ export default function AdminPage() {
               <h1 className="text-3xl font-bold mb-8">Price Configuration</h1>
               <div className="bg-white p-8 rounded-3xl shadow-sm border border-slate-200">
                 <h2 className="text-xl font-semibold mb-6 border-b pb-4">Per Page Costs</h2>
-                <div className="grid grid-cols-1 md:grid-cols-2 gap-6 mb-8">
+                <div className="grid grid-cols-1 md:grid-cols-4 gap-6 mb-8">
                   <div>
                     <label className="block text-sm font-bold text-slate-700 mb-2">Black & White (₹)</label>
                     <input 
@@ -201,6 +230,24 @@ export default function AdminPage() {
                       type="number" 
                       value={prices.color} 
                       onChange={(e) => setPrices({...prices, color: parseFloat(e.target.value) || 0})}
+                      className="w-full p-3 border-2 border-slate-200 rounded-xl outline-none focus:border-blue-500"
+                    />
+                  </div>
+                  <div>
+                    <label className="block text-sm font-bold text-slate-700 mb-2">Single Side (₹)</label>
+                    <input 
+                      type="number" 
+                      value={prices.singleSide} 
+                      onChange={(e) => setPrices({...prices, singleSide: parseFloat(e.target.value) || 0})}
+                      className="w-full p-3 border-2 border-slate-200 rounded-xl outline-none focus:border-blue-500"
+                    />
+                  </div>
+                  <div>
+                    <label className="block text-sm font-bold text-slate-700 mb-2">Double Side (₹)</label>
+                    <input 
+                      type="number" 
+                      value={prices.doubleSide} 
+                      onChange={(e) => setPrices({...prices, doubleSide: parseFloat(e.target.value) || 0})}
                       className="w-full p-3 border-2 border-slate-200 rounded-xl outline-none focus:border-blue-500"
                     />
                   </div>
