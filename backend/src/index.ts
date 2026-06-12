@@ -4,6 +4,7 @@ import dotenv from 'dotenv';
 import Razorpay from 'razorpay';
 import crypto from 'crypto';
 import mongoose from 'mongoose';
+import jwt from 'jsonwebtoken';
 import Order from './models/Order.js';
 import Settings from './models/Settings.js';
 
@@ -125,7 +126,39 @@ app.post('/api/verify-payment', async (req, res) => {
   }
 });
 
-// Get Settings
+// Admin Authentication Endpoint
+app.post('/api/admin/login', (req, res) => {
+  const { password } = req.body;
+  const adminPassword = process.env.ADMIN_PASSWORD || 'admin123';
+  const jwtSecret = process.env.JWT_SECRET || 'supersecretkey';
+
+  if (password === adminPassword) {
+    const token = jwt.sign({ role: 'admin' }, jwtSecret, { expiresIn: '1d' });
+    res.status(200).json({ success: true, token });
+  } else {
+    res.status(401).json({ success: false, error: 'Invalid password' });
+  }
+});
+
+// Authentication Middleware
+const authenticateAdmin = (req: express.Request, res: express.Response, next: express.NextFunction) => {
+  const authHeader = req.headers.authorization;
+  if (!authHeader || !authHeader.startsWith('Bearer ')) {
+    return res.status(401).json({ success: false, error: 'Unauthorized' });
+  }
+
+  const token = authHeader.split(' ')[1];
+  const jwtSecret = process.env.JWT_SECRET || 'supersecretkey';
+
+  try {
+    jwt.verify(token, jwtSecret);
+    next();
+  } catch (error) {
+    return res.status(403).json({ success: false, error: 'Forbidden: Invalid or expired token' });
+  }
+};
+
+// Get Settings (Public so frontend can read prices)
 app.get('/api/settings', async (req, res) => {
   try {
     let settings = await Settings.findOne();
@@ -138,8 +171,8 @@ app.get('/api/settings', async (req, res) => {
   }
 });
 
-// Update Settings
-app.post('/api/settings', async (req, res) => {
+// Update Settings (Protected)
+app.post('/api/settings', authenticateAdmin, async (req, res) => {
   try {
     const { prices } = req.body;
     let settings = await Settings.findOne();
@@ -156,7 +189,7 @@ app.post('/api/settings', async (req, res) => {
 });
 
 // Get all orders (for Admin Panel)
-app.get('/api/orders', async (req, res) => {
+app.get('/api/orders', authenticateAdmin, async (req, res) => {
   try {
     const orders = await Order.find().sort({ createdAt: -1 });
     res.status(200).json({ success: true, orders });
@@ -167,7 +200,7 @@ app.get('/api/orders', async (req, res) => {
 });
 
 // Update order status (for Admin Panel)
-app.put('/api/orders/:id/status', async (req, res) => {
+app.put('/api/orders/:id/status', authenticateAdmin, async (req, res) => {
   try {
     const { status } = req.body;
     const order = await Order.findByIdAndUpdate(

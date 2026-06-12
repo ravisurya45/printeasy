@@ -29,10 +29,10 @@ export default function UploadPage() {
   
   // Pricing State
   const [prices, setPrices] = useState({
-    bw: 2,
-    color: 10,
-    singleSide: 0,
-    doubleSide: 0,
+    bwSingle: 2,
+    bwDouble: 3,
+    colorSingle: 10,
+    colorDouble: 18,
     binding: {
       none: 0,
       soft: 20,
@@ -50,10 +50,10 @@ export default function UploadPage() {
         if (data.success && data.settings?.prices) {
           const fetchedPrices = data.settings.prices;
           setPrices({
-            bw: fetchedPrices.bw,
-            color: fetchedPrices.color,
-            singleSide: fetchedPrices.singleSide || 0,
-            doubleSide: fetchedPrices.doubleSide || 0,
+            bwSingle: fetchedPrices.bwSingle || 2,
+            bwDouble: fetchedPrices.bwDouble || 3,
+            colorSingle: fetchedPrices.colorSingle || 10,
+            colorDouble: fetchedPrices.colorDouble || 18,
             binding: {
               none: 0,
               soft: fetchedPrices.soft || 20,
@@ -99,10 +99,20 @@ export default function UploadPage() {
   };
 
   const calculateTotal = () => {
-    const pageCost = printType === 'bw' ? prices.bw : prices.color;
-    const sideCost = sides === 'single' ? prices.singleSide : prices.doubleSide;
+    let costPerUnit = 0;
+    if (printType === 'bw') {
+      costPerUnit = sides === 'single' ? prices.bwSingle : prices.bwDouble;
+    } else {
+      costPerUnit = sides === 'single' ? prices.colorSingle : prices.colorDouble;
+    }
+    
+    let units = pageCount || 1;
+    if (sides === 'double') {
+      units = Math.ceil(units / 2);
+    }
+
     const bindingCost = prices.binding[binding as keyof typeof prices.binding];
-    return ((pageCost + sideCost) * (pageCount || 1) * copies) + bindingCost;
+    return (costPerUnit * units * copies) + bindingCost;
   };
 
   const handlePayment = async () => {
@@ -263,13 +273,13 @@ export default function UploadPage() {
                   className={`flex-1 py-3 rounded-xl border-2 font-semibold ${printType === 'bw' ? 'border-blue-600 bg-blue-50 text-blue-700' : 'border-slate-200 text-slate-600 hover:border-slate-300'}`}
                   onClick={() => setPrintType('bw')}
                 >
-                  Black & White (₹2/pg)
+                  Black & White
                 </button>
                 <button 
                   className={`flex-1 py-3 rounded-xl border-2 font-semibold ${printType === 'color' ? 'border-blue-600 bg-blue-50 text-blue-700' : 'border-slate-200 text-slate-600 hover:border-slate-300'}`}
                   onClick={() => setPrintType('color')}
                 >
-                  Color (₹10/pg)
+                  Color
                 </button>
               </div>
             </div>
@@ -281,13 +291,13 @@ export default function UploadPage() {
                   className={`flex-1 py-3 rounded-xl border-2 font-semibold ${sides === 'single' ? 'border-blue-600 bg-blue-50 text-blue-700' : 'border-slate-200 text-slate-600 hover:border-slate-300'}`}
                   onClick={() => setSides('single')}
                 >
-                  Single Side {prices.singleSide > 0 ? `(+₹${prices.singleSide}/pg)` : ''}
+                  Single Side (₹{printType === 'bw' ? prices.bwSingle : prices.colorSingle}/pg)
                 </button>
                 <button 
                   className={`flex-1 py-3 rounded-xl border-2 font-semibold ${sides === 'double' ? 'border-blue-600 bg-blue-50 text-blue-700' : 'border-slate-200 text-slate-600 hover:border-slate-300'}`}
                   onClick={() => setSides('double')}
                 >
-                  Double Side {prices.doubleSide > 0 ? `(+₹${prices.doubleSide}/pg)` : ''}
+                  Double Side (₹{printType === 'bw' ? prices.bwDouble : prices.colorDouble}/sheet)
                 </button>
               </div>
             </div>
@@ -325,9 +335,9 @@ export default function UploadPage() {
                 onChange={(e) => setBinding(e.target.value)}
               >
                 <option value="none">No Binding</option>
-                <option value="soft">Soft Binding (+₹20)</option>
-                <option value="spiral">Spiral Binding (+₹40)</option>
-                <option value="hard">Hard Binding (+₹150)</option>
+                <option value="soft">Soft Binding (+₹{prices.binding.soft})</option>
+                <option value="spiral">Spiral Binding (+₹{prices.binding.spiral})</option>
+                <option value="hard">Hard Binding (+₹{prices.binding.hard})</option>
               </select>
             </div>
 
@@ -375,11 +385,10 @@ export default function UploadPage() {
             <p className="text-slate-500 mb-6 font-medium">₹{calculateTotal()} via any UPI app</p>
             
             <div className="bg-slate-50 p-6 rounded-2xl inline-block mb-2 border-2 border-slate-100">
-              <QRCodeSVG 
-                value={`upi://pay?pa=${process.env.NEXT_PUBLIC_UPI_ID || 'example@upi'}&pn=PrintEasy&am=${calculateTotal()}&cu=INR`}
-                size={220}
-                level="H"
-                includeMargin={true}
+              <img 
+                src="/scanner.jpg" 
+                alt="My UPI Scanner"
+                style={{ width: 220, height: 220, objectFit: 'contain' }}
               />
             </div>
             
