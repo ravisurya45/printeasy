@@ -22,6 +22,11 @@ export default function UploadPage() {
   const [copies, setCopies] = useState(1);
   const [binding, setBinding] = useState('none');
   
+  // Customer Details State
+  const [customerName, setCustomerName] = useState('');
+  const [customerEmail, setCustomerEmail] = useState('');
+  const [customerPhone, setCustomerPhone] = useState('');
+  
   // Payment State
   const [isProcessing, setIsProcessing] = useState(false);
   const [paymentMethod, setPaymentMethod] = useState<'razorpay' | 'direct_upi'>('razorpay');
@@ -130,7 +135,11 @@ export default function UploadPage() {
       const res = await fetch(`${apiUrl}/api/create-order`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ amount }),
+        body: JSON.stringify({ 
+          amount,
+          printSettings: { printType, sides, paperSize, copies, binding, pageCount },
+          customer: { name: customerName, email: customerEmail, phone: customerPhone }
+        }),
       });
 
       const data = await res.json();
@@ -176,9 +185,9 @@ export default function UploadPage() {
           }
         },
         prefill: {
-          name: "Customer Name",
-          email: "customer@example.com",
-          contact: "9999999999"
+          name: customerName,
+          email: customerEmail,
+          contact: customerPhone
         },
         theme: {
           color: "#2563EB"
@@ -341,7 +350,48 @@ export default function UploadPage() {
               </select>
             </div>
 
-            <div>
+            <div className="pt-4 border-t border-slate-100">
+              <h3 className="text-lg font-bold text-slate-800 mb-4">Your Details</h3>
+              <div className="space-y-4">
+                <div>
+                  <label className="block text-sm font-bold text-slate-700 mb-2">Full Name</label>
+                  <input 
+                    type="text" 
+                    value={customerName}
+                    onChange={(e) => setCustomerName(e.target.value)}
+                    placeholder="John Doe"
+                    className="w-full p-3 border-2 border-slate-200 rounded-xl outline-none focus:border-blue-500"
+                    required
+                  />
+                </div>
+                <div className="grid grid-cols-2 gap-4">
+                  <div>
+                    <label className="block text-sm font-bold text-slate-700 mb-2">Email</label>
+                    <input 
+                      type="email" 
+                      value={customerEmail}
+                      onChange={(e) => setCustomerEmail(e.target.value)}
+                      placeholder="john@example.com"
+                      className="w-full p-3 border-2 border-slate-200 rounded-xl outline-none focus:border-blue-500"
+                      required
+                    />
+                  </div>
+                  <div>
+                    <label className="block text-sm font-bold text-slate-700 mb-2">Phone</label>
+                    <input 
+                      type="tel" 
+                      value={customerPhone}
+                      onChange={(e) => setCustomerPhone(e.target.value)}
+                      placeholder="9999999999"
+                      className="w-full p-3 border-2 border-slate-200 rounded-xl outline-none focus:border-blue-500"
+                      required
+                    />
+                  </div>
+                </div>
+              </div>
+            </div>
+
+            <div className="pt-4 border-t border-slate-100">
               <label className="block text-sm font-bold text-slate-700 mb-2">Payment Method</label>
               <div className="flex gap-4">
                 <button 
@@ -366,7 +416,7 @@ export default function UploadPage() {
               </div>
               <button 
                 onClick={handlePayment}
-                disabled={isCalculating || pageCount === 0 || isProcessing}
+                disabled={isCalculating || pageCount === 0 || isProcessing || !customerName.trim() || !customerEmail.trim() || !customerPhone.trim()}
                 className="px-8 py-4 bg-green-500 text-white font-bold rounded-xl shadow-lg hover:bg-green-600 transition-all transform hover:-translate-y-1 disabled:opacity-50 disabled:hover:translate-y-0"
               >
                 {isProcessing ? 'Processing...' : (paymentMethod === 'direct_upi' ? 'Show QR Code' : 'Pay with Razorpay')}

@@ -7,6 +7,8 @@ export default function AdminPage() {
   const [activeTab, setActiveTab] = useState('orders');
   const [orders, setOrders] = useState<any[]>([]);
   const [loadingOrders, setLoadingOrders] = useState(true);
+  const [customers, setCustomers] = useState<any[]>([]);
+  const [loadingCustomers, setLoadingCustomers] = useState(true);
 
   // Authentication State
   const [isAuthenticated, setIsAuthenticated] = useState(false);
@@ -100,11 +102,31 @@ export default function AdminPage() {
     }
   };
 
+  const fetchCustomers = async () => {
+    setLoadingCustomers(true);
+    try {
+      const apiUrl = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:5001';
+      const res = await fetch(`${apiUrl}/api/customers`, {
+        headers: getAuthHeaders()
+      });
+      const data = await res.json();
+      if (data.success) {
+        setCustomers(data.customers);
+      }
+    } catch (err) {
+      console.error("Failed to fetch customers", err);
+    } finally {
+      setLoadingCustomers(false);
+    }
+  };
+
   useEffect(() => {
     if (activeTab === 'orders' && isAuthenticated) {
       fetchOrders();
     } else if (activeTab === 'settings' && isAuthenticated) {
       fetchPrices();
+    } else if (activeTab === 'customers' && isAuthenticated) {
+      fetchCustomers();
     }
   }, [activeTab, isAuthenticated]);
 
@@ -142,10 +164,26 @@ export default function AdminPage() {
     }
   };
 
-  // Mock Customers Data
-  const mockCustomers = [
-    { name: 'John Doe', email: 'john@example.com', ordersCount: 5 },
-  ];
+  const deleteOrder = async (orderId: string) => {
+    if (!confirm('Are you sure you want to delete this order?')) return;
+    try {
+      const apiUrl = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:5001';
+      const res = await fetch(`${apiUrl}/api/orders/${orderId}`, {
+        method: 'DELETE',
+        headers: getAuthHeaders()
+      });
+      const data = await res.json();
+      if (data.success) {
+        setOrders(orders.filter(o => o._id !== orderId));
+      } else {
+        alert('Failed to delete order');
+      }
+    } catch (err) {
+      console.error("Error deleting order", err);
+    }
+  };
+
+  // Render block
 
   if (!isAuthenticated) {
     return (
@@ -251,6 +289,7 @@ export default function AdminPage() {
                         <th className="pb-4 font-bold text-slate-500 uppercase text-sm">Details</th>
                         <th className="pb-4 font-bold text-slate-500 uppercase text-sm">Total</th>
                         <th className="pb-4 font-bold text-slate-500 uppercase text-sm">Status</th>
+                        <th className="pb-4 font-bold text-slate-500 uppercase text-sm text-right">Actions</th>
                       </tr>
                     </thead>
                     <tbody>
@@ -287,6 +326,17 @@ export default function AdminPage() {
                               <option value="Ready">Ready</option>
                               <option value="Completed">Completed</option>
                             </select>
+                          </td>
+                          <td className="py-4 text-right">
+                            <button 
+                              onClick={() => deleteOrder(order._id)}
+                              className="p-2 text-red-500 hover:text-red-700 hover:bg-red-50 rounded-lg transition-colors"
+                              title="Delete Order"
+                            >
+                              <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5 inline-block" viewBox="0 0 20 20" fill="currentColor">
+                                <path fillRule="evenodd" d="M9 2a1 1 0 00-.894.553L7.382 4H4a1 1 0 000 2v10a2 2 0 002 2h8a2 2 0 002-2V6a1 1 0 100-2h-3.382l-.724-1.447A1 1 0 0011 2H9zM7 8a1 1 0 012 0v6a1 1 0 11-2 0V8zm5-1a1 1 0 00-1 1v6a1 1 0 102 0V8a1 1 0 00-1-1z" clipRule="evenodd" />
+                              </svg>
+                            </button>
                           </td>
                         </tr>
                       ))}
@@ -398,26 +448,45 @@ export default function AdminPage() {
           {/* Customers Tab */}
           {activeTab === 'customers' && (
             <div>
-              <h1 className="text-3xl font-bold mb-8">Customers Directory</h1>
-              <div className="bg-white p-8 rounded-3xl shadow-sm border border-slate-200 overflow-x-auto">
-                <table className="w-full text-left">
-                  <thead>
-                    <tr className="border-b-2 border-slate-200">
-                      <th className="pb-4 font-bold text-slate-500 uppercase text-sm">Name</th>
-                      <th className="pb-4 font-bold text-slate-500 uppercase text-sm">Email</th>
-                      <th className="pb-4 font-bold text-slate-500 uppercase text-sm">Total Orders</th>
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {mockCustomers.map((customer, i) => (
-                      <tr key={i} className="border-b border-slate-100 hover:bg-slate-50">
-                        <td className="py-4 font-semibold text-slate-900">{customer.name}</td>
-                        <td className="py-4 text-slate-600">{customer.email}</td>
-                        <td className="py-4 font-medium text-slate-700">{customer.ordersCount}</td>
+              <div className="flex justify-between items-center mb-8">
+                <h1 className="text-3xl font-bold">Customers Directory</h1>
+                <button onClick={fetchCustomers} className="px-4 py-2 bg-slate-200 text-slate-700 rounded-lg hover:bg-slate-300 font-medium text-sm transition-colors">
+                  Refresh
+                </button>
+              </div>
+              <div className="bg-white p-8 rounded-3xl shadow-sm border border-slate-200 overflow-x-auto min-h-[400px]">
+                {loadingCustomers ? (
+                  <div className="flex justify-center items-center h-40">
+                    <p className="text-slate-500 font-medium animate-pulse">Loading Customers...</p>
+                  </div>
+                ) : customers.length === 0 ? (
+                  <div className="text-center py-12">
+                    <p className="text-slate-500 text-lg">No customers yet.</p>
+                  </div>
+                ) : (
+                  <table className="w-full text-left">
+                    <thead>
+                      <tr className="border-b-2 border-slate-200">
+                        <th className="pb-4 font-bold text-slate-500 uppercase text-sm">Name</th>
+                        <th className="pb-4 font-bold text-slate-500 uppercase text-sm">Email</th>
+                        <th className="pb-4 font-bold text-slate-500 uppercase text-sm">Phone</th>
+                        <th className="pb-4 font-bold text-slate-500 uppercase text-sm text-center">Total Orders</th>
+                        <th className="pb-4 font-bold text-slate-500 uppercase text-sm text-right">Last Order</th>
                       </tr>
-                    ))}
-                  </tbody>
-                </table>
+                    </thead>
+                    <tbody>
+                      {customers.map((customer, i) => (
+                        <tr key={customer._id || i} className="border-b border-slate-100 hover:bg-slate-50">
+                          <td className="py-4 font-semibold text-slate-900">{customer.name}</td>
+                          <td className="py-4 text-slate-600">{customer.email}</td>
+                          <td className="py-4 text-slate-600">{customer.phone}</td>
+                          <td className="py-4 font-bold text-slate-700 text-center">{customer.ordersCount}</td>
+                          <td className="py-4 text-sm text-slate-500 text-right">{new Date(customer.lastOrderDate).toLocaleDateString()}</td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                )}
               </div>
             </div>
           )}

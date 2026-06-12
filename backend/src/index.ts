@@ -7,6 +7,35 @@ import mongoose from 'mongoose';
 import jwt from 'jsonwebtoken';
 import Order from './models/Order.js';
 import Settings from './models/Settings.js';
+import Customer from './models/Customer.js';
+
+async function processCustomer(customerData: { name?: string, email?: string, phone?: string }) {
+  if (!customerData || (!customerData.email && !customerData.phone)) return;
+  
+  try {
+    const query = [];
+    if (customerData.email) query.push({ email: customerData.email });
+    if (customerData.phone) query.push({ phone: customerData.phone });
+
+    let customer = await Customer.findOne({ $or: query });
+    if (customer) {
+      customer.ordersCount += 1;
+      customer.lastOrderDate = new Date();
+      if (customerData.name && !customer.name) customer.name = customerData.name;
+      await customer.save();
+    } else {
+      await Customer.create({
+        name: customerData.name || 'Unknown',
+        email: customerData.email || '',
+        phone: customerData.phone || '',
+        ordersCount: 1,
+        lastOrderDate: new Date()
+      });
+    }
+  } catch (err) {
+    console.error("Error processing customer data:", err);
+  }
+}
 
 dotenv.config();
 
@@ -74,7 +103,8 @@ app.post('/api/create-order', async (req, res) => {
     const newOrder = new Order({
       razorpayOrderId: order.id,
       amount: amountInPaise,
-      printSettings: req.body.printSettings || {}
+      printSettings: req.body.printSettings || {},
+      customer: req.body.customer || {}
     });
     await newOrder.save();
 
@@ -107,14 +137,18 @@ app.post('/api/verify-payment', async (req, res) => {
   if (razorpay_signature === expectedSign) {
     try {
       // Payment is authentic, update database
-      await Order.findOneAndUpdate(
+      const order = await Order.findOneAndUpdate(
         { razorpayOrderId: razorpay_order_id },
         { 
           status: 'Confirmed', 
           razorpayPaymentId: razorpay_payment_id,
           updatedAt: new Date()
-        }
+        },
+        { new: true }
       );
+      if (order && order.customer) {
+        await processCustomer(order.customer);
+      }
       res.status(200).json({ success: true, message: 'Payment verified successfully' });
     } catch (err) {
       console.error("Error updating order in DB", err);
@@ -199,10 +233,23 @@ app.get('/api/orders', authenticateAdmin, async (req, res) => {
   }
 });
 
+// Delete an order
+app.delete('/api/orders/:id', authenticateAdmin, async (req, res) => {
+  try {
+    const { id } = req.params;
+    await Order.findByIdAndDelete(id);
+    res.status(200).json({ success: true, message: 'Order deleted successfully' });
+  } catch (error) {
+    console.error("Error deleting order:", error);
+    res.status(500).json({ success: false, error: 'Failed to delete order' });
+  }
+});
+
 // Update order status (for Admin Panel)
 app.put('/api/orders/:id/status', authenticateAdmin, async (req, res) => {
   try {
     const { status } = req.body;
+    const oldOrder = await Order.findById(req.params.id);
     const order = await Order.findByIdAndUpdate(
       req.params.id, 
       { status, updatedAt: new Date() }, 
@@ -211,10 +258,27 @@ app.put('/api/orders/:id/status', authenticateAdmin, async (req, res) => {
     if (!order) {
       return res.status(404).json({ success: false, error: 'Order not found' });
     }
+    
+    // If it's being confirmed/processed for the first time
+    if (oldOrder && oldOrder.status === 'Payment Pending' && status !== 'Payment Pending' && order.customer) {
+      await processCustomer(order.customer);
+    }
+
     res.status(200).json({ success: true, order });
   } catch (error) {
     console.error("Error updating order:", error);
     res.status(500).json({ success: false, error: 'Failed to update order' });
+  }
+});
+
+// Get all customers (for Admin Panel)
+app.get('/api/customers', authenticateAdmin, async (req, res) => {
+  try {
+    const customers = await Customer.find().sort({ lastOrderDate: -1 });
+    res.status(200).json({ success: true, customers });
+  } catch (error) {
+    console.error("Error fetching customers:", error);
+    res.status(500).json({ success: false, error: 'Failed to fetch customers' });
   }
 });
 
