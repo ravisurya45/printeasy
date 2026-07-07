@@ -5,7 +5,6 @@ import Link from 'next/link';
 import { useRouter } from 'next/navigation';
 import { PDFDocument } from 'pdf-lib';
 import Script from 'next/script';
-import { QRCodeSVG } from 'qrcode.react';
 
 export default function UploadPage() {
   const router = useRouter();
@@ -21,16 +20,15 @@ export default function UploadPage() {
   const [paperSize, setPaperSize] = useState('A4');
   const [copies, setCopies] = useState(1);
   const [binding, setBinding] = useState('none');
+  const [startPage, setStartPage] = useState<number | ''>('');
+  const [endPage, setEndPage] = useState<number | ''>('');
   
   // Customer Details State
   const [customerName, setCustomerName] = useState('');
-  const [customerEmail, setCustomerEmail] = useState('');
   const [customerPhone, setCustomerPhone] = useState('');
   
   // Payment State
   const [isProcessing, setIsProcessing] = useState(false);
-  const [paymentMethod, setPaymentMethod] = useState<'razorpay' | 'direct_upi'>('razorpay');
-  const [showDirectUPI, setShowDirectUPI] = useState(false);
   
   // Pricing State
   const [prices, setPrices] = useState({
@@ -111,7 +109,12 @@ export default function UploadPage() {
       costPerUnit = sides === 'single' ? prices.colorSingle : prices.colorDouble;
     }
     
-    let units = pageCount || 1;
+    let effectivePageCount = pageCount;
+    if (startPage !== '' && endPage !== '') {
+      effectivePageCount = Math.max(0, Number(endPage) - Number(startPage) + 1);
+    }
+    
+    let units = effectivePageCount || 1;
     if (sides === 'double') {
       units = Math.ceil(units / 2);
     }
@@ -121,24 +124,43 @@ export default function UploadPage() {
   };
 
   const handlePayment = async () => {
-    if (paymentMethod === 'direct_upi') {
-      setShowDirectUPI(true);
-      return;
-    }
-
     setIsProcessing(true);
     const amount = calculateTotal();
 
     try {
-      // 1. Create order on backend
       const apiUrl = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:5001';
+      
+      let fileUrl = '';
+      if (selectedFile) {
+        const formData = new FormData();
+        formData.append('file', selectedFile);
+        
+        const uploadRes = await fetch(`${apiUrl}/api/upload-public`, {
+          method: 'POST',
+          body: formData
+        });
+        const uploadData = await uploadRes.json();
+        if (uploadData.success) {
+          fileUrl = uploadData.fileUrl;
+        } else {
+          console.error('File upload failed:', uploadData.error);
+          alert('Warning: Document failed to upload.');
+        }
+      }
+
+      // 1. Create order on backend
       const res = await fetch(`${apiUrl}/api/create-order`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ 
           amount,
-          printSettings: { printType, sides, paperSize, copies, binding, pageCount },
-          customer: { name: customerName, email: customerEmail, phone: customerPhone }
+          printSettings: { 
+            printType, sides, paperSize, copies, binding, pageCount,
+            startPage: startPage !== '' ? Number(startPage) : undefined,
+            endPage: endPage !== '' ? Number(endPage) : undefined
+          },
+          customer: { name: customerName, phone: customerPhone },
+          fileUrl
         }),
       });
 
@@ -186,7 +208,6 @@ export default function UploadPage() {
         },
         prefill: {
           name: customerName,
-          email: customerEmail,
           contact: customerPhone
         },
         theme: {
@@ -336,6 +357,33 @@ export default function UploadPage() {
               </div>
             </div>
 
+            <div className="grid grid-cols-2 gap-4">
+              <div>
+                <label className="block text-sm font-bold text-slate-700 mb-2">From Page (Optional)</label>
+                <input 
+                  type="number" 
+                  min="1" 
+                  max={pageCount || 1}
+                  value={startPage} 
+                  onChange={(e) => setStartPage(e.target.value === '' ? '' : parseInt(e.target.value))}
+                  placeholder="e.g. 1"
+                  className="w-full p-3 border-2 border-slate-200 rounded-xl outline-none focus:border-blue-500"
+                />
+              </div>
+              <div>
+                <label className="block text-sm font-bold text-slate-700 mb-2">To Page (Optional)</label>
+                <input 
+                  type="number" 
+                  min={startPage || 1} 
+                  max={pageCount || 1}
+                  value={endPage} 
+                  onChange={(e) => setEndPage(e.target.value === '' ? '' : parseInt(e.target.value))}
+                  placeholder={`e.g. ${pageCount || 10}`}
+                  className="w-full p-3 border-2 border-slate-200 rounded-xl outline-none focus:border-blue-500"
+                />
+              </div>
+            </div>
+
             <div>
               <label className="block text-sm font-bold text-slate-700 mb-2">Binding</label>
               <select 
@@ -364,50 +412,25 @@ export default function UploadPage() {
                     required
                   />
                 </div>
-                <div className="grid grid-cols-2 gap-4">
-                  <div>
-                    <label className="block text-sm font-bold text-slate-700 mb-2">Email</label>
-                    <input 
-                      type="email" 
-                      value={customerEmail}
-                      onChange={(e) => setCustomerEmail(e.target.value)}
-                      placeholder="john@example.com"
-                      className="w-full p-3 border-2 border-slate-200 rounded-xl outline-none focus:border-blue-500"
-                      required
-                    />
-                  </div>
-                  <div>
-                    <label className="block text-sm font-bold text-slate-700 mb-2">Phone</label>
-                    <input 
-                      type="tel" 
-                      value={customerPhone}
-                      onChange={(e) => setCustomerPhone(e.target.value)}
-                      placeholder="9999999999"
-                      className="w-full p-3 border-2 border-slate-200 rounded-xl outline-none focus:border-blue-500"
-                      required
-                    />
-                  </div>
+                <div>
+                  <label className="block text-sm font-bold text-slate-700 mb-2">Phone</label>
+                  <input 
+                    type="tel" 
+                    value={customerPhone}
+                    onChange={(e) => {
+                      const val = e.target.value.replace(/\D/g, ''); // only allow digits
+                      if(val.length <= 10) setCustomerPhone(val);
+                    }}
+                    placeholder="9999999999"
+                    className="w-full p-3 border-2 border-slate-200 rounded-xl outline-none focus:border-blue-500"
+                    required
+                    maxLength={10}
+                  />
                 </div>
               </div>
             </div>
 
-            <div className="pt-4 border-t border-slate-100">
-              <label className="block text-sm font-bold text-slate-700 mb-2">Payment Method</label>
-              <div className="flex gap-4">
-                <button 
-                  className={`flex-1 py-3 rounded-xl border-2 font-semibold transition-colors ${paymentMethod === 'razorpay' ? 'border-blue-600 bg-blue-50 text-blue-700' : 'border-slate-200 text-slate-600 hover:border-slate-300'}`}
-                  onClick={() => setPaymentMethod('razorpay')}
-                >
-                  Razorpay
-                </button>
-                <button 
-                  className={`flex-1 py-3 rounded-xl border-2 font-semibold transition-colors ${paymentMethod === 'direct_upi' ? 'border-blue-600 bg-blue-50 text-blue-700' : 'border-slate-200 text-slate-600 hover:border-slate-300'}`}
-                  onClick={() => setPaymentMethod('direct_upi')}
-                >
-                  Direct UPI QR
-                </button>
-              </div>
-            </div>
+
 
             <div className="pt-6 border-t border-slate-100 flex items-center justify-between">
               <div>
@@ -416,10 +439,10 @@ export default function UploadPage() {
               </div>
               <button 
                 onClick={handlePayment}
-                disabled={isCalculating || pageCount === 0 || isProcessing || !customerName.trim() || !customerEmail.trim() || !customerPhone.trim()}
+                disabled={isCalculating || pageCount === 0 || isProcessing || !customerName.trim() || customerPhone.length !== 10}
                 className="px-8 py-4 bg-green-500 text-white font-bold rounded-xl shadow-lg hover:bg-green-600 transition-all transform hover:-translate-y-1 disabled:opacity-50 disabled:hover:translate-y-0"
               >
-                {isProcessing ? 'Processing...' : (paymentMethod === 'direct_upi' ? 'Show QR Code' : 'Pay with Razorpay')}
+                {isProcessing ? 'Processing...' : 'Pay with Razorpay'}
               </button>
             </div>
             <p className="text-xs text-center text-slate-400 font-medium">Includes automated UPI, Card, and Net Banking options</p>
@@ -427,55 +450,7 @@ export default function UploadPage() {
         </div>
       </main>
 
-      {/* Direct UPI Modal */}
-      {showDirectUPI && (
-        <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
-          <div className="bg-white p-8 rounded-3xl max-w-sm w-full text-center shadow-2xl transform transition-all">
-            <h3 className="text-2xl font-bold mb-2">Scan to Pay</h3>
-            <p className="text-slate-500 mb-6 font-medium">₹{calculateTotal()} via any UPI app</p>
-            
-            <div className="bg-slate-50 p-6 rounded-2xl inline-block mb-2 border-2 border-slate-100">
-              <img 
-                src="/scanner.jpg" 
-                alt="My UPI Scanner"
-                style={{ width: 220, height: 220, objectFit: 'contain' }}
-              />
-            </div>
-            
-            <p className="text-sm text-slate-500 mb-8 mt-2">Scan with GPay, PhonePe, or Paytm</p>
-            
-            <div className="flex gap-4">
-              <button 
-                onClick={() => setShowDirectUPI(false)}
-                className="flex-1 py-3 bg-slate-100 hover:bg-slate-200 text-slate-700 rounded-xl font-bold transition-colors"
-              >
-                Cancel
-              </button>
-              <button 
-                onClick={async () => {
-                  try {
-                    // Create an unverified order in backend
-                    const apiUrl = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:5001';
-                    await fetch(`${apiUrl}/api/create-order`, {
-                      method: 'POST',
-                      headers: { 'Content-Type': 'application/json' },
-                      body: JSON.stringify({ amount: calculateTotal() }),
-                    });
-                  } catch (e) {
-                    console.error("Could not save order", e);
-                  }
-                  
-                  // Optimistically assume they paid and route to orders
-                  router.push(`/orders?method=DirectUPI&total=${calculateTotal()}`);
-                }}
-                className="flex-1 py-3 bg-green-500 text-white hover:bg-green-600 rounded-xl font-bold transition-colors shadow-md shadow-green-200"
-              >
-                I've Paid
-              </button>
-            </div>
-          </div>
-        </div>
-      )}
+
     </div>
   );
 }

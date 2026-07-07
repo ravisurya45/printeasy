@@ -11,8 +11,11 @@ const OrderSchema = new mongoose.Schema({
   },
   printSettings: {
     pageCount: Number,
+    startPage: Number,
+    endPage: Number,
     copies: Number,
     printType: String,
+    sides: String,
     paperSize: String,
     binding: String
   },
@@ -21,6 +24,7 @@ const OrderSchema = new mongoose.Schema({
     email: String,
     phone: String
   },
+  fileUrl: { type: String },
   createdAt: { type: Date, default: Date.now },
   updatedAt: { type: Date, default: Date.now }
 });

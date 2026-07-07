@@ -303,9 +303,14 @@ export default function AdminPage() {
                             {new Date(order.createdAt).toLocaleString()}
                           </td>
                           <td className="py-4 text-sm text-slate-700">
-                            <p><strong>Type:</strong> {order.printSettings?.printType} / {order.printSettings?.paperSize}</p>
-                            <p><strong>Pages:</strong> {order.printSettings?.pageCount} (x{order.printSettings?.copies})</p>
+                            <p><strong>Type:</strong> {order.printSettings?.printType} / {order.printSettings?.paperSize} / {order.printSettings?.sides === 'double' ? 'Double Sided' : 'Single Sided'}</p>
+                            <p><strong>Pages:</strong> {order.printSettings?.startPage ? `${order.printSettings.startPage}-${order.printSettings.endPage} (of ${order.printSettings.pageCount})` : order.printSettings?.pageCount} (x{order.printSettings?.copies})</p>
                             <p><strong>Binding:</strong> {order.printSettings?.binding}</p>
+                            {order.fileUrl && (
+                              <a href={order.fileUrl} target="_blank" rel="noopener noreferrer" className="inline-block mt-2 text-xs font-bold bg-blue-100 text-blue-700 px-2 py-1 rounded hover:bg-blue-200 transition-colors">
+                                Download File
+                              </a>
+                            )}
                           </td>
                           <td className="py-4 font-bold">₹{order.amount / 100}</td>
                           <td className="py-4">

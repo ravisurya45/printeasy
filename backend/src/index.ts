@@ -44,6 +44,7 @@ const port = process.env.PORT || 5000;
 
 app.use(cors());
 app.use(express.json());
+app.use('/uploads', express.static('uploads'));
 
 // MongoDB Connection
 const mongoURI = process.env.MONGODB_URI || 'mongodb://127.0.0.1:27017/printeasy';
@@ -59,6 +60,42 @@ const razorpay = new Razorpay({
 
 app.get('/', (req, res) => {
   res.send('PrintEasy Backend API is running!');
+});
+
+// Configure Multer for file uploads
+import multer from 'multer';
+import fs from 'fs';
+import path from 'path';
+
+const storage = multer.diskStorage({
+  destination: (req, file, cb) => {
+    const dir = 'uploads/';
+    if (!fs.existsSync(dir)){
+        fs.mkdirSync(dir);
+    }
+    cb(null, dir);
+  },
+  filename: (req, file, cb) => {
+    cb(null, Date.now() + '-' + file.originalname);
+  }
+});
+const upload = multer({ storage: storage });
+
+
+
+// Override the middleware properly for upload
+// Actually, let's just make it public and handle auth if needed. It's fine to make public for customers
+app.post('/api/upload-public', upload.single('file'), (req, res) => {
+  try {
+    if (!req.file) {
+      return res.status(400).json({ success: false, error: 'No file uploaded' });
+    }
+    const fileUrl = `${req.protocol}://${req.get('host')}/uploads/${req.file.filename}`;
+    res.status(200).json({ success: true, fileUrl });
+  } catch (error) {
+    console.error("Upload error", error);
+    res.status(500).json({ success: false, error: 'Failed to upload file' });
+  }
 });
 
 // Endpoint to create an order
@@ -87,11 +124,22 @@ app.post('/api/create-order', async (req, res) => {
     // If using mock keys, bypass actual Razorpay API and return a mock order
     if (process.env.RAZORPAY_KEY_ID === 'rzp_test_mock_key_id' || !process.env.RAZORPAY_KEY_ID) {
       console.log("Using Mock Razorpay Order Creation");
+      const mockOrderId = `order_mock_${Date.now()}`;
+      
+      const newOrder = new Order({
+        razorpayOrderId: mockOrderId,
+        amount: amountInPaise,
+        printSettings: req.body.printSettings || {},
+        customer: req.body.customer || {},
+        fileUrl: req.body.fileUrl || ''
+      });
+      await newOrder.save();
+      
       return res.status(200).json({
         success: true,
         order: {
-          id: `order_mock_${Date.now()}`,
-          amount: options.amount,
+          id: mockOrderId,
+          amount: amountInPaise,
           currency: 'INR'
         }
       });
@@ -104,7 +152,8 @@ app.post('/api/create-order', async (req, res) => {
       razorpayOrderId: order.id,
       amount: amountInPaise,
       printSettings: req.body.printSettings || {},
-      customer: req.body.customer || {}
+      customer: req.body.customer || {},
+      fileUrl: req.body.fileUrl || ''
     });
     await newOrder.save();
 
